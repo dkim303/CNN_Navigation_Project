@@ -10,6 +10,7 @@ __pycache__/
 # ML and Numpy
 *.npy
 *.npz
+*.yaml
 
 # Training, Validation, Test Data
 data/*
