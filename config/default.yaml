@@ -1,0 +1,24 @@
+# Dictate the general architecture of the CNN model layers
+# Both map and drone CNNs have same architecture but different learned weights
+model:
+  conv_layers:
+    - filters: 32
+      kernel_size: 3
+
+    - filters: 64
+      kernel_size: 3
+
+    - filters: 128
+      kernel_size: 3
+
+# Hyperparameters for training and dataset
+training:
+  learning_rate: 0.001
+  epochs: 20
+  batch_size: 64
+  seed: 42
+
+data:
+  train_ratio: 0.70
+  validation_ratio: 0.15
+  test_ratio: 0.15
