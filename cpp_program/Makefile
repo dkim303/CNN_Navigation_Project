@@ -1,3 +1,13 @@
-make clean:
+CXX := g++
+CXXFLAGS := -std=c++20 -Wall -Wextra -O2
 
-make program: -> creates executable that creates other binary file
+program: main.o
+	$(CXX) $(CXXFLAGS) main.o -o program
+
+main.o: main.cpp
+	$(CXX) $(CXXFLAGS) -c main.cpp
+
+clean:
+	rm -f *.o program
+
+.PHONY: clean

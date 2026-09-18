@@ -7,6 +7,14 @@ __pycache__/
 *.so
 *.o
 
+# ML and Numpy
+*.npy
+*.npz
+
+# Training, Validation, Test Data
+data/*
+!data/.gitkeep
+
 # Distribution / packaging
 .Python
 build/
@@ -149,6 +157,7 @@ activemq-data/
 *.sage.py
 
 # Environments
+*.env
 .env
 .envrc
 .venv
