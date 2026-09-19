@@ -2,3 +2,5 @@ torch==2.2.2
 numpy==2.5.2
 opencv-python==5.0.0.93
 dotenv==0.9.9
+tensorboard==2.21.0
+PyYAML==6.0.3
