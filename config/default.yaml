@@ -1,5 +1,7 @@
 # Dictate the general architecture of the CNN model layers
 # Both map and drone CNNs have same architecture but different learned weights
+
+# Extra features like residual networks or batchnorming are implemmented by default
 model:
   conv_layers:
     - filters: 32
@@ -22,3 +24,7 @@ data:
   train_ratio: 0.70
   validation_ratio: 0.15
   test_ratio: 0.15
+  satellite_tiling:
+    tile_size_pixels: 512
+    stride_pixels: 256
+    model_input_size: 224

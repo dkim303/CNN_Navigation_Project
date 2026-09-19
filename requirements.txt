@@ -4,3 +4,4 @@ opencv-python==5.0.0.93
 dotenv==0.9.9
 tensorboard==2.21.0
 PyYAML==6.0.3
+pandas==3.0.5
