@@ -9,6 +9,7 @@ import os
 from utils.images_utils import Satellite_Tile, Drone_Image
 import pandas as pd
 from dotenv import load_dotenv
+from utils.data_etl import load_drone_metadata, load_satellite_tiles_metadata
 
 class Residual_Block(nn.Module):
     def __init__(self, channels: int):
@@ -145,21 +146,32 @@ if __name__ == "__main__":
     # Extract the model architecutre as list[dict]
     model_architecture = config.get("model").get("conv_layers")
 
-    # Read info on dataset from data.env file
-
-
     # Construct initial models, weights are initially randomized using the random seed
     sv_model = Satellite_Vision_Model(model_architecture)
     dv_model = Drone_Vision_Model(model_architecture)
 
     # Define loss function as Cross-Entropy loss
     loss_fn = nn.CrossEntropyLoss()
-
-    # Load data metadata into 2 Dataframes
-    # Drone_DF: index=drone_id, cols=image_path,map_id,lattitude,longitude, split
-    # Tile_DF: index=tile_id, x_min, y_min, x_max, y_max, north_lat, south_lat, west_long, east_lon, split
     
-    # Step 1: Load sattelite maps CSV
+    # Load sattelite maps metadata CSV
+    # satellite_maps_csv_df expected format:
+    #
+    # Index:
+    #   map_id        string   Unique map ID extracted from map_filename,
+    #                        e.g. "01" from "satellite01.tif"
+    #
+    # Columns:
+    #   map_filename  string   Satellite-map image filename
+    #   north_lat     float64  Latitude of the map's northern boundary
+    #   west_lon      float64  Longitude of the map's western boundary
+    #   south_lat     float64  Latitude of the map's southern boundary
+    #   east_lon      float64  Longitude of the map's eastern boundary
+    #
+    # Example:
+    #
+    # map_id | map_filename    | north_lat | west_lon | south_lat | east_lon
+    # 01     | satellite01.tif | 29.750... | 115.980... | 29.720... | 116.020...
+    # 02     | satellite02.tif | 30.110... | 116.200... | 30.080... | 116.240...
     satellite_csv_path = Path(__file__).resolve().parent.parent/"data"/"satellite_ coordinates_range.csv"
     satellite_maps_csv_df = pd.read_csv(satellite_csv_path)
     satellite_maps_csv_df = satellite_maps_csv_df.rename(columns={
@@ -176,25 +188,19 @@ if __name__ == "__main__":
     )
 
     satellite_maps_csv_df = satellite_maps_csv_df.set_index("map_id", verify_integrity=True)
+    project_root = Path(__file__).resolve().parents[1]
 
-    # Step 2: Create dataframe for satellite tiles metadata using csv dataframe to calculate corner coordinates
-    Tiles_DF = 
+    # Create dataframe for satellite tiles metadata using csv dataframe to calculate corner coordinates
+    Tiles_DF = load_satellite_tiles_metadata(satellite_maps_csv_df, 
+                                             project_root / "data",
+                                             tile_size_pixels, 
+                                             stride_pixels)
 
-    # Step 3: For each of the sattelites, read the CSVs of the drone photos
-        # Cols should be: unique_photo_id, lat, lon, correct_tile_id
+    # Read each CSV and update the drone_images_df, tiles are not mapped yet
+    drone_images_df = load_drone_metadata(NUM_SATELLITE_MAPS)
 
-    drone_images_df = pd.DataFrame({
-        "image_id": pd.Series(dtype="string"),
-        "image_path": pd.Series(dtype="string"),
-        "lat": pd.Series(dtype="float64"),
-        "lon": pd.Series(dtype="float64"),
-        "map_id": pd.Series(dtype="string"),
-        "primary_tile_id": pd.Series(dtype="string"),
-    })
-
-    # Read each CSV and update the drone_images_df
-    for map_id in range(NUM_SATELLITE_MAPS):
-
+    # Perform mapping of correct tiles to drone images in the drone_images_df
+    map
 
     # Train - Validation - Test split
 
