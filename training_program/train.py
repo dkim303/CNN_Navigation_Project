@@ -9,98 +9,11 @@ import os
 from utils.images_utils import Satellite_Tile, Drone_Image
 import pandas as pd
 from dotenv import load_dotenv
-from utils.data_etl import load_drone_metadata, load_satellite_tiles_metadata
 
-class Residual_Block(nn.Module):
-    def __init__(self, channels: int):
-        super().__init__()
-
-        self.block = nn.Sequential(
-            nn.Conv2d(channels, channels, 3, padding=1),
-            nn.BatchNorm2d(channels),
-            nn.ReLU(),
-            nn.Conv2d(channels, channels, 3, padding=1),
-            nn.BatchNorm2d(channels)
-        )
-        self.relu = nn.ReLU()
-
-    def forward(self, x):
-        return self.relu(self.block(x) + x)
-
-
-class Satellite_Vision_Model(nn.Module):
-    def __init__(self, conv_layers: list[dict]):
-        super().__init__()
-
-        layers = []
-        in_channels = 3
-
-        for layer in conv_layers:
-            out_channels = layer["filters"]
-            kernel_size = layer["kernel_size"]
-
-            layers.extend([nn.Conv2d(
-                in_channels = in_channels,
-                out_channels = out_channels,
-                kernel_size = kernel_size,
-                padding = kernel_size // 2,
-                bias=False
-            ), 
-            nn.BatchNorm2d(out_channels),
-            nn.ReLU(),
-            Residual_Block(out_channels)
-            ])
-
-            in_channels = out_channels
-
-        self.layers = nn.Sequential(*layers)
-
-    # Output should be a high dimensional vector
-    def forward(self, x):
-        x = self.layers(x)
-        x = self.pool(x)
-        x = torch.flatten(x, start_dim=1)
-        x = self.projection(x)
-        return x
-
-
-class Drone_Vision_Model(nn.Module):
-    def __init__(self, conv_layers: list[dict]):
-        super().__init__()
-
-        layers = []
-        in_channels = 3
-
-        for layer in conv_layers:
-            out_channels = layer["filters"]
-            kernel_size = layer["kernel_size"]
-
-            layers.extend([nn.Conv2d(
-                in_channels = in_channels,
-                out_channels = out_channels,
-                kernel_size = kernel_size,
-                padding = kernel_size // 2,
-                bias=False
-            ), 
-            nn.BatchNorm2d(out_channels),
-            nn.ReLU(),
-            Residual_Block(out_channels)
-            ])
-
-            in_channels = out_channels
-
-        self.layers = nn.Sequential(*layers)
-
-    # Output should be a high dimensional vector
-    def forward(self, x):
-        x = self.layers(x)
-        x = self.pool(x)
-        x = torch.flatten(x, start_dim=1)
-        x = self.projection(x)
-        return x
+from utils.data_etl import load_drone_metadata, load_satellite_tiles_metadata, map_images_to_tiles, data_partition_TVT
+from utils.models import Satellite_Vision_Model, Drone_Vision_Model
 
 if __name__ == "__main__":
-
     # Read command line arguments for model name and config (optional)
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-name", type=str, required=True)
@@ -140,7 +53,7 @@ if __name__ == "__main__":
     NUM_SATELLITE_MAPS = int(os.getenv("NUM_SATELLITE_MAPS"))
 
     # Set random seed
-    np.random.seed(random_seed)
+    rng = np.random.default_rng(random_seed) # U(0,1)
     torch.manual_seed(random_seed)
 
     # Extract the model architecutre as list[dict]
@@ -191,18 +104,45 @@ if __name__ == "__main__":
     project_root = Path(__file__).resolve().parents[1]
 
     # Create dataframe for satellite tiles metadata using csv dataframe to calculate corner coordinates
+    # Index:
+    #   map_id
+    #
+    # Columns:
+    #   map_filename
+    #   north_lat
+    #   west_lon
+    #   south_lat
+    #   east_lon
     Tiles_DF = load_satellite_tiles_metadata(satellite_maps_csv_df, 
                                              project_root / "data",
                                              tile_size_pixels, 
                                              stride_pixels)
 
     # Read each CSV and update the drone_images_df, tiles are not mapped yet
+    # Index:
+    #   image_id         string   Unique drone-image ID, e.g. "01_0001"
+    #
+    # Columns:
+    #   image_path       string   Path to the image file
+    #   lat              float64  Latitude of the image center
+    #   lon              float64  Longitude of the image center
+    #   map_id           string   Source satellite-map ID, e.g. "01"
+    #   primary_tile_id  string   Best matching tile ID; initially missing
     drone_images_df = load_drone_metadata(NUM_SATELLITE_MAPS)
 
     # Perform mapping of correct tiles to drone images in the drone_images_df
-    map
+    # drone_images_df is updated to have all cells in primary_tile_id col filled out
+    map_images_to_tiles(drone_images_df, Tiles_DF)
 
     # Train - Validation - Test split
+    # Create new column that designates which bucket it falls into: train - validation - test
+    data_partition_TVT(drone_images_df,
+                       Tiles_DF,
+                       NUM_SATELLITE_MAPS,
+                       train_ratio,
+                       validation_ratio,
+                       test_ratio,
+                       rng)
 
     # Statistical diagonostics to ensure effective split
 
@@ -215,4 +155,3 @@ if __name__ == "__main__":
 
     # Export model files for Satellite and Drone in seperate files
     # Format will be <name>_s.npy and <name>_d.npy respectively
-    

@@ -26,3 +26,24 @@ def test_load_null():
 
     with pytest.raises(ValueError):
         tensor = load_image_tensor(null_img_path)
+
+def test_satellite_tile():
+    tile = Satellite_Tile(tile_id=1, 
+                          map_id=1, 
+                          image_path=None, 
+                          x_min=0, 
+                          y_min=0, 
+                          x_max=5, 
+                          y_max=5,
+                          north_lat=100,
+                          south_lat=-100,
+                          west_lon=10,
+                          east_lon=20)
+
+    assert(tile.center_lat == 0)
+    assert(tile.center_lon == 15)
+    assert(tile.contains_coordinate(0, 12) == True)
+
+def test_drone_image():
+    pass
+
