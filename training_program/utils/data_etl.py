@@ -5,6 +5,7 @@ import numpy as np
 from utils.images_utils import Satellite_Tile, Drone_Image
 import pandas as pd
 from PIL import Image
+import math
 
 # drone_images_df format:
 #
@@ -279,10 +280,110 @@ def load_satellite_tiles_metadata(satellite_csv_df: pd.DataFrame,
 
     return tiles_df.set_index("tile_id", verify_integrity=True)
 
-
 # Update every entry in the drone_dataframe "primary_tile_id" column
 # Test that no entries are NA in the primary_tile_id col at the end
 def map_images_to_tiles(drone_dataframe: pd.DataFrame,
-                        tiles_dataFrame: pd.DataFrame) -> None:
-    pass
+                        tiles_dataframe: pd.DataFrame) -> None:
     
+    tiles_by_map = {map_id: group for map_id, group in tiles_dataframe.groupby("map_id")}
+
+    for image_id, drone_row in drone_dataframe.iterrows():
+        map_id = drone_row["map_id"]
+
+        if map_id not in tiles_by_map:
+            raise ValueError(f"No tiles found for map {map_id}")
+
+        map_tiles = tiles_by_map[map_id]
+
+        containing_tiles = map_tiles[
+            (map_tiles["south_lat"] <= drone_row["lat"])
+            & (drone_row["lat"] <= map_tiles["north_lat"])
+            & (map_tiles["west_lon"] <= drone_row["lon"])
+            & (drone_row["lon"] <= map_tiles["east_lon"])
+        ]
+
+        if containing_tiles.empty:
+            raise ValueError(
+                f"No tile contains drone image {image_id}"
+            )
+
+        lat_difference = (
+            containing_tiles["center_lat"] - drone_row["lat"]
+        )
+
+        longitude_scale = np.cos(
+            np.radians(drone_row["lat"])
+        )
+
+        lon_difference = (
+            containing_tiles["center_lon"] - drone_row["lon"]
+        ) * longitude_scale
+
+        distance_squared = (
+            lat_difference**2 + lon_difference**2
+        )
+
+        primary_tile_id = distance_squared.idxmin()
+
+        # Modifies the original DataFrame.
+        drone_dataframe.at[
+            image_id,
+            "primary_tile_id",
+        ] = primary_tile_id
+
+    if drone_dataframe["primary_tile_id"].isna().any():
+        raise ValueError(
+            "Some drone images were not assigned a tile"
+        )
+
+def data_partition_TVT(drone_dataframe: pd.DataFrame,
+                       tiles_dataframe: pd.DataFrame,
+                       NUM_SATELLITE_MAPS: int,
+                       train_ratio: float,
+                       validation_ratio: float,
+                       test_ratio: float,
+                       rng: np.random.Generator) -> None:
+
+    ratio_sums = train_ratio + validation_ratio + test_ratio
+
+    if not math.isclose(1, ratio_sums):
+        raise ValueError("Data split ratios do not sum to 1")
+
+    if NUM_SATELLITE_MAPS < 3:
+        raise ValueError("Insufficient number of satellite maps for model training")
+
+    if set(drone_dataframe["map_id"]) != set(tiles_dataframe["map_id"]):
+        raise ValueError("Drone and tiles datasets contain unmatched map IDs")
+
+    map_ids = drone_dataframe["map_id"].unique().tolist()
+
+    if len(map_ids) != NUM_SATELLITE_MAPS:
+        raise ValueError("NUM_SATELLITE_MAPS does not match the number of unique map IDs")
+    
+    train_maps = []
+    validation_maps = []
+    test_maps = []
+
+    shuffled_maps = list(rng.permutation(map_ids))
+    train_maps.append(shuffled_maps[0])
+    validation_maps.append(shuffled_maps[1])
+    test_maps.append(shuffled_maps[2])
+
+    for map_id in shuffled_maps[3::]:
+        u = rng.random()
+        if u <= train_ratio:
+            train_maps.append(map_id)
+        elif u <= train_ratio + validation_ratio:
+            validation_maps.append(map_id)
+        else:
+            test_maps.append(map_id)
+
+    # Update "dataset" cols in drone and tiles dataframes to be based on this split
+    dataset_lookup = {
+        **{map_id: "train" for map_id in train_maps},
+        **{map_id: "validation" for map_id in validation_maps},
+        **{map_id: "test" for map_id in test_maps},
+    }
+
+    drone_dataframe["dataset"] = (drone_dataframe["map_id"].map(dataset_lookup).astype("string"))
+    tiles_dataframe["dataset"] = (tiles_dataframe["map_id"].map(dataset_lookup).astype("string"))
