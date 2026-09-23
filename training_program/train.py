@@ -10,8 +10,9 @@ from utils.images_utils import Satellite_Tile, Drone_Image
 import pandas as pd
 from dotenv import load_dotenv
 
-from utils.data_etl import load_drone_metadata, load_satellite_tiles_metadata, map_images_to_tiles, data_partition_TVT
+from utils.data_etl import load_drone_metadata, load_satellite_tiles_metadata, map_images_to_tiles, data_partition_TVT, check_data_leakage
 from utils.models import Satellite_Vision_Model, Drone_Vision_Model
+from utils.statistical_diagnostics import create_random_sample
 
 if __name__ == "__main__":
     # Read command line arguments for model name and config (optional)
@@ -33,6 +34,7 @@ if __name__ == "__main__":
         config = yaml.safe_load(file)
 
     learning_rate = config.get("training").get("learning_rate")
+    weight_decay_rate = config.get("training").get("weight_decay")
     num_epochs = config.get("training").get("epochs")
     batch_size = config.get("training").get("batch_size")
     random_seed = config.get("training").get("seed")
@@ -62,9 +64,6 @@ if __name__ == "__main__":
     # Construct initial models, weights are initially randomized using the random seed
     sv_model = Satellite_Vision_Model(model_architecture)
     dv_model = Drone_Vision_Model(model_architecture)
-
-    # Define loss function as Cross-Entropy loss
-    loss_fn = nn.CrossEntropyLoss()
     
     # Load sattelite maps metadata CSV
     # satellite_maps_csv_df expected format:
@@ -144,14 +143,37 @@ if __name__ == "__main__":
                        test_ratio,
                        rng)
 
-    # Statistical diagonostics to ensure effective split
+    # Statistical diagonostics to ensure effective split and data leakage tests
+    check_data_leakage(drone_images_df, Tiles_DF)
 
-    # Training cycle + Validation testing
+    # Set up optimizer
+    optimizer = torch.optim.AdamW(
+        list(dv_model.parameters())
+        + list(sv_model.parameters()),
+        lr=learning_rate,
+        weight_decay=weight_decay_rate)
+
+    # Define loss function as Cross-Entropy loss
+    loss_fn = nn.CrossEntropyLoss()
+    
+    # Metrics to track during training
+    metrics = {
+        "training_loss": [],
+        "validation_loss": [],
+        "validation_top1": [],
+        "validation_top5": [],
+        "validation_median_distance_m": [],
+        "positive_similarity": [],
+        "negative_similarity": [],
+        "gradient_norm": [],
+        "learning_rate": [],
+    }
+
     for epoch in range(num_epochs):
         pass
-        # Validation testing
-
     
 
     # Export model files for Satellite and Drone in seperate files
-    # Format will be <name>_s.npy and <name>_d.npy respectively
+    # Format will be <name>_s.tch and <name>_d.tch respectively
+
+    model_dest_path = Path(__file__).parent.parent / "models"

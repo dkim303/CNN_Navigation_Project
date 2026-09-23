@@ -387,3 +387,30 @@ def data_partition_TVT(drone_dataframe: pd.DataFrame,
 
     drone_dataframe["dataset"] = (drone_dataframe["map_id"].map(dataset_lookup).astype("string"))
     tiles_dataframe["dataset"] = (tiles_dataframe["map_id"].map(dataset_lookup).astype("string"))
+
+def check_data_leakage(drone_df: pd.DataFrame,
+                       tiles_df: pd.DataFrame) -> None:
+    
+    # Get map_ids from drone training dataset
+    train_maps = set(drone_df.loc[drone_df["dataset"] == "train", "map_id"])
+
+    # Get map_ids from drone validation dataset
+    validation_maps = set(drone_df.loc[drone_df["dataset"] == "validation", "map_id"])
+
+    # Get map_ids from drone test dataset
+    test_maps = set(drone_df.loc[drone_df["dataset"] == "test", "map_id"])
+
+    # Ensure no map appears in multiple datasets
+    if not (train_maps.isdisjoint(validation_maps) and train_maps.isdisjoint(test_maps) and validation_maps.isdisjoint(test_maps)):
+        raise ValueError("Error: dataset partition failed, duplicate data across multiple datasets present")
+
+    # Ensure no missing values in any of the datasets
+    if any ([drone_df["dataset"].isna().any(), drone_df["primary_tile_id"].isna().any(), tiles_df["dataset"].isna().any()]):
+        raise ValueError("Error: not all cells in drone_df dataset and primary_tile_id cols or tiles_df dataset col were filled in")
+
+    # For each drone datapoint's primary_tile_id, look it up to ensure it is mapped correctly
+    tile_splits = tiles_df["dataset"]
+    drone_tile_splits = drone_df["primary_tile_id"].map(tile_splits)
+
+    if not (drone_df["dataset"] == drone_tile_splits).all():
+        raise ValueError("Error: drone tile mapping was invalid")
