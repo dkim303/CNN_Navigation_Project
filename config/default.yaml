@@ -28,4 +28,4 @@ data:
   satellite_tiling:
     tile_size_pixels: 512
     stride_pixels: 256
-    model_input_size: 224
+    model_input_size: 384
