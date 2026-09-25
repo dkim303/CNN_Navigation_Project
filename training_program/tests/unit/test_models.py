@@ -10,7 +10,7 @@ import pandas as pd
 from utils.models import Satellite_Vision_Model, Drone_Vision_Model
 
 def test_load_empty_models_config():
-    config_path = Path(__file__).resolve().parents[2] / "config" / "default.yaml"
+    config_path = Path(__file__).resolve().parents[3] / "config" / "default.yaml"
 
     with config_path.open("r", encoding="utf-8") as file:
         config = yaml.safe_load(file)

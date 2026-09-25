@@ -2,10 +2,16 @@ from pathlib import Path
 import cv2
 import torch
 import numpy as np
-from utils.images_utils import Satellite_Tile, Drone_Image
+from utils.images_utils import load_image_tensor
 import pandas as pd
 from PIL import Image
 import math
+from collections.abc import Callable
+
+from torch.utils.data import DataLoader
+from torch.utils.data import Dataset
+import torch.nn.functional as F
+from torchvision.transforms import v2
 
 # drone_images_df format:
 #
@@ -414,3 +420,74 @@ def check_data_leakage(drone_df: pd.DataFrame,
 
     if not (drone_df["dataset"] == drone_tile_splits).all():
         raise ValueError("Error: drone tile mapping was invalid")
+
+
+class DTCombinedDataset(Dataset):
+    def __init__(self, drone_df: pd.DataFrame, tile_df: pd.DataFrame, load_image_tensor: Callable[[Path], torch.Tensor], model_input_size: int, ):
+        self.drone_df = drone_df.reset_index()
+        self.tile_df = tile_df
+        self.load_image_tensor = load_image_tensor
+        self.model_input_size = model_input_size
+
+    def __len__(self) -> int:
+        return len(self.drone_df)
+
+    def __getitem__(self, index: int) -> dict[str, torch.Tensor | str]:
+        drone_row = self.drone_df.iloc[index]
+        tile_id = str(drone_row["primary_tile_id"])
+        tile_row = self.tile_df.loc[tile_id]
+
+        drone_tensor = self.load_image_tensor(Path(drone_row["image_path"]))
+
+        satellite_tensor = self.load_image_tensor(Path(tile_row["satellite_path"]))
+
+        x_min = int(tile_row["x_min"])
+        x_max = int(tile_row["x_max"])
+        y_min = int(tile_row["y_min"])
+        y_max = int(tile_row["y_max"])
+
+        output_size = (self.model_input_size, self.model_input_size)
+
+        # [channels, height, width]
+        tile_tensor = satellite_tensor[:, y_min:y_max, x_min:x_max]
+
+        # F.interpolate expects a batch dimension:
+        # [C, H, W] -> [1, C, H, W]
+        # Standardize tensor sizes for model based in input param from config file
+        # default is 256, so each tensor is in the form [3, 256, 256]: 3 channels 224x224 pixels
+        drone_tensor = F.interpolate(drone_tensor.unsqueeze(0), 
+                                     size=output_size, 
+                                     mode="bilinear", 
+                                     align_corners=False).squeeze(0)
+        
+        tile_tensor = F.interpolate(tile_tensor.unsqueeze(0), 
+                                    size=output_size, 
+                                    mode="bilinear", 
+                                    align_corners=False).squeeze(0)
+
+        return {"drone_tensor": drone_tensor,
+                "tile_tensor": tile_tensor,
+                "image_id": str(drone_row["image_id"]),
+                "tile_id": tile_id}
+
+def load_datasets_TVT(drone_images_df: pd.DataFrame, tiles_df: pd.DataFrame, batch_size: int, model_input_size: int) -> tuple[DataLoader, DataLoader, DataLoader]:
+    # Create seperate dataframes for drone and tiles based on [train - validation - test]
+    training_drone_df = drone_images_df[drone_images_df["dataset"] == "train"]
+    validation_drone_df = drone_images_df[drone_images_df["dataset"] == "validation"]
+    test_drone_df = drone_images_df[drone_images_df["dataset"] == "test"]
+
+    training_tiles_df = tiles_df[tiles_df["dataset"] == "train"]
+    validation_tiles_df = tiles_df[tiles_df["dataset"] == "validation"]
+    test_tiles_df = tiles_df[tiles_df["dataset"] == "test"]
+
+    # Create overall datasets for train - validate - test
+    training_dataset = DTCombinedDataset(training_drone_df, training_tiles_df, load_image_tensor, model_input_size)
+    validation_dataset = DTCombinedDataset(validation_drone_df, validation_tiles_df, load_image_tensor, model_input_size)
+    test_dataset = DTCombinedDataset(test_drone_df, test_tiles_df, load_image_tensor, model_input_size)
+
+    # Automate batching process using Pytorch DataLoader
+    training_loader = DataLoader(training_dataset, batch_size=batch_size, shuffle=True)
+    validation_loader = DataLoader(validation_dataset, batch_size=batch_size, shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+
+    return training_loader, validation_loader, test_loader

@@ -6,11 +6,11 @@ import torch
 import numpy as np
 from torch import nn
 import os
-from utils.images_utils import Satellite_Tile, Drone_Image
+from utils.images_utils import load_image_tensor
 import pandas as pd
 from dotenv import load_dotenv
 
-from utils.data_etl import load_drone_metadata, load_satellite_tiles_metadata, map_images_to_tiles, data_partition_TVT, check_data_leakage
+from utils.data_etl import load_drone_metadata, load_satellite_tiles_metadata, map_images_to_tiles, data_partition_TVT, check_data_leakage, load_datasets_TVT
 from utils.models import Satellite_Vision_Model, Drone_Vision_Model
 from utils.statistical_diagnostics import create_random_sample
 
@@ -102,17 +102,28 @@ if __name__ == "__main__":
     satellite_maps_csv_df = satellite_maps_csv_df.set_index("map_id", verify_integrity=True)
     project_root = Path(__file__).resolve().parents[1]
 
-    # Create dataframe for satellite tiles metadata using csv dataframe to calculate corner coordinates
+    # tiles_df format:
+    #
     # Index:
-    #   map_id
+    #   tile_id           string   Unique tile ID, e.g. "01_r0000_c0000"
     #
     # Columns:
-    #   map_filename
-    #   north_lat
-    #   west_lon
-    #   south_lat
-    #   east_lon
-    Tiles_DF = load_satellite_tiles_metadata(satellite_maps_csv_df, 
+    #   map_id           string   Source satellite-map ID, e.g. "01"
+    #   satellite_path   string   Path to the original satellite image
+    #
+    #   x_min            int64    Left pixel boundary, inclusive
+    #   y_min            int64    Top pixel boundary, inclusive
+    #   x_max            int64    Right pixel boundary, exclusive
+    #   y_max            int64    Bottom pixel boundary, exclusive
+    #
+    #   north_lat        float64  Northern geographic boundary
+    #   south_lat        float64  Southern geographic boundary
+    #   west_lon         float64  Western geographic boundary
+    #   east_lon         float64  Eastern geographic boundary
+    #
+    #   center_lat       float64  Latitude of the tile center
+    #   center_lon       float64  Longitude of the tile center
+    tiles_df = load_satellite_tiles_metadata(satellite_maps_csv_df, 
                                              project_root / "data",
                                              tile_size_pixels, 
                                              stride_pixels)
@@ -129,14 +140,17 @@ if __name__ == "__main__":
     #   primary_tile_id  string   Best matching tile ID; initially missing
     drone_images_df = load_drone_metadata(NUM_SATELLITE_MAPS)
 
+    if len(drone_images_df) != NUM_DRONE_IMAGES:
+        raise ValueError(f"Exepected {NUM_DRONE_IMAGES} drone images, found {len(drone_images_df)}")
+
     # Perform mapping of correct tiles to drone images in the drone_images_df
     # drone_images_df is updated to have all cells in primary_tile_id col filled out
-    map_images_to_tiles(drone_images_df, Tiles_DF)
+    map_images_to_tiles(drone_images_df, tiles_df)
 
     # Train - Validation - Test split
     # Create new column that designates which bucket it falls into: train - validation - test
     data_partition_TVT(drone_images_df,
-                       Tiles_DF,
+                       tiles_df,
                        NUM_SATELLITE_MAPS,
                        train_ratio,
                        validation_ratio,
@@ -144,14 +158,15 @@ if __name__ == "__main__":
                        rng)
 
     # Statistical diagonostics to ensure effective split and data leakage tests
-    check_data_leakage(drone_images_df, Tiles_DF)
+    check_data_leakage(drone_images_df, tiles_df)
+
+    # Unpack 3 data loader objects to be used in training process
+    training_loader, validation_loader, test_loader = load_datasets_TVT(drone_images_df, tiles_df, batch_size, model_input_size)
 
     # Set up optimizer
-    optimizer = torch.optim.AdamW(
-        list(dv_model.parameters())
-        + list(sv_model.parameters()),
-        lr=learning_rate,
-        weight_decay=weight_decay_rate)
+    optimizer = torch.optim.AdamW(list(dv_model.parameters()) + list(sv_model.parameters()),
+                                  lr=learning_rate, 
+                                  weight_decay=weight_decay_rate)
 
     # Define loss function as Cross-Entropy loss
     loss_fn = nn.CrossEntropyLoss()
@@ -169,11 +184,27 @@ if __name__ == "__main__":
         "learning_rate": [],
     }
 
+    # Models training step
+    # Use training data to make gradients and check validation accuracy
     for epoch in range(num_epochs):
-        pass
-    
+        # Train section
+        sv_model.train()
+        dv_model.train()
+        for batch in training_loader:
+
+            pass
+
+        # Validation test section
+        sv_model.eval()
+        dv_model.eval()
+        with torch.no_grad():
+            for batch in validation_loader:
+
+                pass
 
     # Export model files for Satellite and Drone in seperate files
     # Format will be <name>_s.tch and <name>_d.tch respectively
 
     model_dest_path = Path(__file__).parent.parent / "models"
+    s_model_name = f"{model_name}_s"
+    d_model_name = f"{model_name}_d"
