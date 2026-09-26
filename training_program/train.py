@@ -190,9 +190,15 @@ if __name__ == "__main__":
         # Train section
         sv_model.train()
         dv_model.train()
-        for batch in training_loader:
 
-            pass
+        for batch in training_loader:
+            # drone_images: [B, 4, 3, S, S]
+            # tile_images:  [B, 3, S, S]
+
+            drone_images = batch["drone_tensor"]
+            tile_images = batch["tile_tensor"]
+
+            batch_size_actual, num_quadrants, channels, height, width = (drone_images.shape)
 
         # Validation test section
         sv_model.eval()
@@ -202,9 +208,20 @@ if __name__ == "__main__":
 
                 pass
 
+    # Run test dataset
+    sv_model.eval()
+    dv_model.eval()
+    with torch.no_grad():
+        for batch in test_loader:
+
+            pass
+
     # Export model files for Satellite and Drone in seperate files
     # Format will be <name>_s.tch and <name>_d.tch respectively
 
-    model_dest_path = Path(__file__).parent.parent / "models"
-    s_model_name = f"{model_name}_s"
-    d_model_name = f"{model_name}_d"
+    model_dest_path = str(Path(__file__).parent.parent / "models")
+    s_path = model_dest_path / f"{model_name}_s.pt"
+    d_path = model_dest_path / f"{model_name}_d.pt"
+ 
+    torch.save(x, s_path)
+    torch.save(y, d_path)
