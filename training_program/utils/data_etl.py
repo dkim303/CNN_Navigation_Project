@@ -423,11 +423,17 @@ def check_data_leakage(drone_df: pd.DataFrame,
 
 
 class DTCombinedDataset(Dataset):
-    def __init__(self, drone_df: pd.DataFrame, tile_df: pd.DataFrame, load_image_tensor: Callable[[Path], torch.Tensor], model_input_size: int, ):
+    def __init__(self, drone_df: pd.DataFrame, 
+                 tile_df: pd.DataFrame, 
+                 load_image_tensor: Callable[[Path], torch.Tensor], 
+                 model_input_size: int,
+                 transform: Callable[[torch.Tensor], torch.Tensor] | None = None,):
+
         self.drone_df = drone_df.reset_index()
         self.tile_df = tile_df
         self.load_image_tensor = load_image_tensor
         self.model_input_size = model_input_size
+        self.transform = transform
 
     def __len__(self) -> int:
         return len(self.drone_df)
@@ -451,21 +457,50 @@ class DTCombinedDataset(Dataset):
         # [channels, height, width]
         tile_tensor = satellite_tensor[:, y_min:y_max, x_min:x_max]
 
+        # Split drone images into 4 quadrants
+        _, drone_height, drone_width = drone_tensor.shape
+
+        middle_y = drone_height // 2
+        middle_x = drone_width // 2
+
+        quadrants = [drone_tensor[:, :middle_y, :middle_x],
+                                       drone_tensor[:, :middle_y, middle_x:],
+                                       drone_tensor[:, middle_y:, :middle_x],
+                                       drone_tensor[:, middle_y:, middle_x:]]
+
         # F.interpolate expects a batch dimension:
         # [C, H, W] -> [1, C, H, W]
         # Standardize tensor sizes for model based in input param from config file
-        # default is 256, so each tensor is in the form [3, 256, 256]: 3 channels 224x224 pixels
-        drone_tensor = F.interpolate(drone_tensor.unsqueeze(0), 
-                                     size=output_size, 
-                                     mode="bilinear", 
-                                     align_corners=False).squeeze(0)
+
+        # Splitting drone images into quadrants mitigates issue of info being lost
+        # while balancing issue of high computational cost
+        drone_quadrants = torch.stack([
+            F.interpolate(
+                quadrant.unsqueeze(0),
+                size=output_size,
+                mode="bilinear",
+                align_corners=False,
+                antialias=True,
+            ).squeeze(0)
+            for quadrant in quadrants
+        ])
+
         
         tile_tensor = F.interpolate(tile_tensor.unsqueeze(0), 
                                     size=output_size, 
                                     mode="bilinear", 
-                                    align_corners=False).squeeze(0)
+                                    align_corners=False,
+                                    antialias=True).squeeze(0)
 
-        return {"drone_tensor": drone_tensor,
+        # Optoinal transform feature to apply slight randomized changes to drone input images to reduce overfitting
+        if self.transform is not None:
+            # Apply independently to every quadrant.
+            drone_quadrants = torch.stack([
+                self.transform(quadrant)
+                for quadrant in drone_quadrants
+            ])
+
+        return {"drone_tensor": drone_quadrants,
                 "tile_tensor": tile_tensor,
                 "image_id": str(drone_row["image_id"]),
                 "tile_id": tile_id}
@@ -480,10 +515,29 @@ def load_datasets_TVT(drone_images_df: pd.DataFrame, tiles_df: pd.DataFrame, bat
     validation_tiles_df = tiles_df[tiles_df["dataset"] == "validation"]
     test_tiles_df = tiles_df[tiles_df["dataset"] == "test"]
 
+    # Set up transform function to apply random small transformations to images
+    training_transform = v2.Compose([v2.RandomHorizontalFlip(p=0.5), 
+                                     v2.RandomRotation(degrees=10),
+                                     v2.ColorJitter(brightness=0.15, contrast=0.15, saturation=0.10, hue=0.02)])
+
     # Create overall datasets for train - validate - test
-    training_dataset = DTCombinedDataset(training_drone_df, training_tiles_df, load_image_tensor, model_input_size)
-    validation_dataset = DTCombinedDataset(validation_drone_df, validation_tiles_df, load_image_tensor, model_input_size)
-    test_dataset = DTCombinedDataset(test_drone_df, test_tiles_df, load_image_tensor, model_input_size)
+    training_dataset = DTCombinedDataset(training_drone_df, 
+                                         training_tiles_df, 
+                                         load_image_tensor, 
+                                         model_input_size,
+                                         transform = training_transform)
+
+    validation_dataset = DTCombinedDataset(validation_drone_df, 
+                                           validation_tiles_df, 
+                                           load_image_tensor, 
+                                           model_input_size,
+                                           transform = None)
+    
+    test_dataset = DTCombinedDataset(test_drone_df, 
+                                     test_tiles_df, 
+                                     load_image_tensor, 
+                                     model_input_size,
+                                     transform = None)
 
     # Automate batching process using Pytorch DataLoader
     training_loader = DataLoader(training_dataset, batch_size=batch_size, shuffle=True)
