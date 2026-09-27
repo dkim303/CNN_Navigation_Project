@@ -16,6 +16,9 @@ __pycache__/
 data/*
 !data/.gitkeep
 
+# Log files
+*.log
+
 # Distribution / packaging
 .Python
 build/
