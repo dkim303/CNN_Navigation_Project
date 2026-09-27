@@ -9,12 +9,16 @@ import os
 from utils.images_utils import load_image_tensor
 import pandas as pd
 from dotenv import load_dotenv
+import logging
 
 from utils.data_etl import load_drone_metadata, load_satellite_tiles_metadata, map_images_to_tiles, data_partition_TVT, check_data_leakage, load_datasets_TVT
 from utils.models import Satellite_Vision_Model, Drone_Vision_Model
 from utils.statistical_diagnostics import create_random_sample
+from utils.logging import setup_logging
 
 if __name__ == "__main__":
+    setup_logging("Model Training", Path(__file__).resolve().parent.parent / "logs")
+
     # Read command line arguments for model name and config (optional)
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-name", type=str, required=True)
@@ -23,10 +27,13 @@ if __name__ == "__main__":
 
     model_name = args.model_name
     config_name = args.config
+    logging.info(f"Model Name: {model_name}")
 
     # use default.yaml architecture if no config is given
     if config_name == None:
         config_name = "default.yaml"
+
+    logging.info(f"Config Name: {config_name}")
 
     # Hyperparameters read from config file
     config_path = Path(__file__).resolve().parent.parent/"configs"/config_name
