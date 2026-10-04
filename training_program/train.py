@@ -71,6 +71,7 @@ if __name__ == "__main__":
     # Construct initial models, weights are initially randomized using the random seed
     sv_model = Satellite_Vision_Model(model_architecture)
     dv_model = Drone_Vision_Model(model_architecture)
+    logging.info("Satellite and Drone Models Initialized")
     
     # Load sattelite maps metadata CSV
     # satellite_maps_csv_df expected format:
@@ -105,6 +106,7 @@ if __name__ == "__main__":
         satellite_maps_csv_df["map_filename"]
         .str.extract(r"satellite(\d+)", expand=False)
     )
+    logging.info("Satellite maps CSV loaded")
 
     satellite_maps_csv_df = satellite_maps_csv_df.set_index("map_id", verify_integrity=True)
     project_root = Path(__file__).resolve().parents[1]
@@ -134,6 +136,7 @@ if __name__ == "__main__":
                                              project_root / "data",
                                              tile_size_pixels, 
                                              stride_pixels)
+    logging.info("Tiles DF loaded")
 
     # Read each CSV and update the drone_images_df, tiles are not mapped yet
     # Index:
@@ -146,6 +149,7 @@ if __name__ == "__main__":
     #   map_id           string   Source satellite-map ID, e.g. "01"
     #   primary_tile_id  string   Best matching tile ID; initially missing
     drone_images_df = load_drone_metadata(NUM_SATELLITE_MAPS)
+    logging.info("Drone Images DF loaded")
 
     if len(drone_images_df) != NUM_DRONE_IMAGES:
         raise ValueError(f"Exepected {NUM_DRONE_IMAGES} drone images, found {len(drone_images_df)}")
@@ -153,6 +157,7 @@ if __name__ == "__main__":
     # Perform mapping of correct tiles to drone images in the drone_images_df
     # drone_images_df is updated to have all cells in primary_tile_id col filled out
     map_images_to_tiles(drone_images_df, tiles_df)
+    logging.info("Drone Images and Tiles mapping procedure done")
 
     # Train - Validation - Test split
     # Create new column that designates which bucket it falls into: train - validation - test
@@ -163,12 +168,15 @@ if __name__ == "__main__":
                        validation_ratio,
                        test_ratio,
                        rng)
+    logging.info("Data partition for training, validation, test datasets done")
 
     # Statistical diagonostics to ensure effective split and data leakage tests
     check_data_leakage(drone_images_df, tiles_df)
+    logging.info("Data leakage check passed")
 
     # Unpack 3 data loader objects to be used in training process
     training_loader, validation_loader, test_loader = load_datasets_TVT(drone_images_df, tiles_df, batch_size, model_input_size)
+    logging.info("Dataset loaders created")
 
     # Set up optimizer
     optimizer = torch.optim.AdamW(list(dv_model.parameters()) + list(sv_model.parameters()),
@@ -193,6 +201,7 @@ if __name__ == "__main__":
 
     # Models training step
     # Use training data to make gradients and check validation accuracy
+    logging.info("Training process beginning")
     for epoch in range(num_epochs):
         # Train section
         sv_model.train()
@@ -215,7 +224,11 @@ if __name__ == "__main__":
 
                 pass
 
+            # Test multiple lambda values for weight decay to min validation loss
+            # Simple situation, so can just have lambda vaues be a set of discrete values to test out
+
     # Run test dataset
+    logging.info("Final evaluation on test dataset running")
     sv_model.eval()
     dv_model.eval()
     with torch.no_grad():
@@ -225,10 +238,12 @@ if __name__ == "__main__":
 
     # Export model files for Satellite and Drone in seperate files
     # Format will be <name>_s.tch and <name>_d.tch respectively
-
     model_dest_path = str(Path(__file__).parent.parent / "models")
     s_path = model_dest_path / f"{model_name}_s.pt"
     d_path = model_dest_path / f"{model_name}_d.pt"
- 
-    torch.save(x, s_path)
-    torch.save(y, d_path)
+
+    torch.save(sv_model, s_path)
+    torch.save(dv_model, d_path)
+    logging.info("Torch files successfully exported")
+
+    logging.info("Program terminated successfully")

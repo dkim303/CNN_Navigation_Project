@@ -44,7 +44,7 @@ Instructions:
         2: python -m training_program.evaluate\ --model-name<???>
 
         3: make -C cpp_program
-        4: ./cpp_program/program models/<???> models/<???>
+        4: ./cpp_program/program models/<???>
 
     Compare different models:
         1: python -m training_program.compare\ --model-name-1 <???> --model-name-2 <???>
