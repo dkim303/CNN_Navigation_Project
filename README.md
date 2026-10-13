@@ -32,9 +32,10 @@ Docker Setup:
     3.
     4.
 
-Activate Virtual Environment:
-
-    source .env/bin/activate
+Create and Activate Virtual Environment:
+    python3.12 -m venv .venv
+    source .venv/bin/activate
+    python -m pip install -r requirements.txt
 
 Instructions:
 
