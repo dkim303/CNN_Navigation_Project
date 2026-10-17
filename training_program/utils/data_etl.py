@@ -540,8 +540,63 @@ def load_datasets_TVT(drone_images_df: pd.DataFrame, tiles_df: pd.DataFrame, bat
                                      transform = None)
 
     # Automate batching process using Pytorch DataLoader
-    training_loader = DataLoader(training_dataset, batch_size=batch_size, shuffle=True)
-    validation_loader = DataLoader(validation_dataset, batch_size=batch_size, shuffle=False)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    training_loader = DataLoader(training_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
+    validation_loader = DataLoader(validation_dataset, batch_size=batch_size, shuffle=False, drop_last=True)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, drop_last=True)
 
     return training_loader, validation_loader, test_loader
+
+
+"""
+Helper function for training loop, validation loop, and testing for model training
+
+drone_images: [B, 4, 3, S, S]
+tile_images:  [B, 3, S, S]
+
+Returns:
+    logits: [B, B]
+    logits[i, j] measures similarity between drone i and tile j.
+"""
+def create_similarity_logits(drone_images: torch.Tensor,
+                             tile_images: torch.Tensor,
+                             dv_model: torch.nn.Module,
+                             sv_model: torch.nn.Module,
+                             temperature: float = 0.07) -> torch.Tensor:
+
+    batch_size, num_quadrants, channels, height, width = drone_images.shape
+
+    # [B, 4, 3, S, S] -> [B * 4, 3, S, S]
+    flattened_drone_images = drone_images.reshape(batch_size * num_quadrants,
+                                                  channels,
+                                                  height,
+                                                  width)
+
+    # [B * 4, embedding_dim]
+    quadrant_embeddings = dv_model(flattened_drone_images)
+
+    # [B * 4, embedding_dim] -> [B, 4, embedding_dim]
+    quadrant_embeddings = quadrant_embeddings.reshape(batch_size, 
+                                                      num_quadrants, 
+                                                      -1)
+
+    # Average quadrants to produce one vector per drone image.
+    # [B, 4, embedding_dim] -> [B, embedding_dim]
+    drone_embeddings = quadrant_embeddings.mean(dim = 1)
+
+    # [B, embedding_dim]
+    tile_embeddings = sv_model(tile_images)
+
+    # Unit-length embeddings make matrix multiplication cosine similarity.
+    drone_embeddings = F.normalize(drone_embeddings,
+                                   p = 2,
+                                   dim = 1)
+
+    tile_embeddings = F.normalize(tile_embeddings, 
+                                  p = 2, 
+                                  dim = 1)
+
+    # [B, embedding_dim] @ [embedding_dim, B] -> [B, B]
+    logits = drone_embeddings @ tile_embeddings.T
+
+    # Lower temperature makes similarity differences more pronounced.
+    return logits / temperature

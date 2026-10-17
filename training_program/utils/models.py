@@ -45,7 +45,8 @@ class Satellite_Vision_Model(nn.Module):
             ), 
             nn.BatchNorm2d(out_channels),
             nn.ReLU(),
-            Residual_Block(out_channels)
+            Residual_Block(out_channels),
+            nn.MaxPool2d(kernel_size=2, stride=2)
             ])
 
             in_channels = out_channels
@@ -85,7 +86,8 @@ class Drone_Vision_Model(nn.Module):
             ), 
             nn.BatchNorm2d(out_channels),
             nn.ReLU(),
-            Residual_Block(out_channels)
+            Residual_Block(out_channels),
+            nn.MaxPool2d(kernel_size=2, stride=2)
             ])
 
             in_channels = out_channels

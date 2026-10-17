@@ -11,7 +11,7 @@ import pandas as pd
 from dotenv import load_dotenv
 import logging
 
-from utils.data_etl import load_drone_metadata, load_satellite_tiles_metadata, map_images_to_tiles, data_partition_TVT, check_data_leakage, load_datasets_TVT
+from utils.data_etl import load_drone_metadata, load_satellite_tiles_metadata, map_images_to_tiles, data_partition_TVT, check_data_leakage, load_datasets_TVT, create_similarity_logits
 from utils.models import Satellite_Vision_Model, Drone_Vision_Model
 from utils.statistical_diagnostics import create_random_sample
 from utils.logging import setup_logging
@@ -190,60 +190,135 @@ if __name__ == "__main__":
     metrics = {
         "training_loss": [],
         "validation_loss": [],
-        "validation_top1": [],
-        "validation_top5": [],
-        "validation_median_distance_m": [],
-        "positive_similarity": [],
-        "negative_similarity": [],
-        "gradient_norm": [],
-        "learning_rate": [],
+        "satellite_gradient_norm": [],
+        "drone_gradient_norm": [],
+        "test_loss": []
     }
 
     # Models training step
     # Use training data to make gradients and check validation accuracy
     logging.info("Training process beginning")
     for epoch in range(num_epochs):
-        # Train section
+        # Model training section
         sv_model.train()
         dv_model.train()
+
+        # Batch values for training loss
+        training_loss_sum = 0.0
+        training_samples = 0
+
+        # Batch data for gradients
+        satellite_grad_norm_sum = 0.0
+        drone_grad_norm_sum = 0.0
+        training_batches = 0
 
         for batch in training_loader:
             # drone_images: [B, 4, 3, S, S]
             # tile_images:  [B, 3, S, S]
-
             drone_images = batch["drone_tensor"]
             tile_images = batch["tile_tensor"]
 
-            batch_size_actual, num_quadrants, channels, height, width = (drone_images.shape)
+            batch_size_actual = drone_images.shape[0]
+            targets = torch.arange(batch_size_actual)
 
-        # Validation test section
+            # Clear current gradient and compute gradient for current batch
+            optimizer.zero_grad(set_to_none=True)   
+
+            similarity_logits = create_similarity_logits(drone_images,
+                                                         tile_images,
+                                                         dv_model,
+                                                         sv_model)
+
+            loss = loss_fn(similarity_logits, targets)
+            loss.backward()
+
+            # Update batch training loss sum
+            training_loss_sum += loss.item() * batch_size_actual
+            training_samples += batch_size_actual
+
+            # Update gradient norm value
+            s_grads = [p.grad for p in sv_model.parameters() if p.grad is not None]
+            s_grad_norm = torch.nn.utils.get_total_norm(s_grads, norm_type=2)
+
+            d_grads = [p.grad for p in dv_model.parameters() if p.grad is not None]
+            d_grad_norm = torch.nn.utils.get_total_norm(d_grads, norm_type=2)
+
+            # Update batch gradients
+            satellite_grad_norm_sum += s_grad_norm.item()
+            drone_grad_norm_sum += d_grad_norm.item()
+            training_batches += 1
+            optimizer.step()
+
+        # Update all training metrics
+        metrics["training_loss"].append(training_loss_sum / training_samples)
+        metrics["satellite_gradient_norm"].append(satellite_grad_norm_sum / training_batches)
+        metrics["drone_gradient_norm"].append(drone_grad_norm_sum / training_batches) 
+
+        # Model validation section
         sv_model.eval()
         dv_model.eval()
         with torch.no_grad():
+            validation_loss_sum = 0.0
+            validation_samples = 0
+
             for batch in validation_loader:
+                drone_images = batch["drone_tensor"]
+                tile_images = batch["tile_tensor"]
+                batch_size_actual = drone_images.shape[0]
+                targets = torch.arange(batch_size_actual)
+                
+                similarity_logits = create_similarity_logits(drone_images,
+                                                            tile_images,
+                                                            dv_model,
+                                                            sv_model)
 
-                pass
+                loss = loss_fn(similarity_logits, targets)
+                validation_loss_sum += loss.item() * batch_size_actual
+                validation_samples += batch_size_actual
 
-            # Test multiple lambda values for weight decay to min validation loss
-            # Simple situation, so can just have lambda vaues be a set of discrete values to test out
+            # Update validation loss metric
+            metrics["validation_loss"].append(validation_loss_sum / validation_samples)
 
-    # Run test dataset
+    # Model test section
     logging.info("Final evaluation on test dataset running")
     sv_model.eval()
     dv_model.eval()
     with torch.no_grad():
-        for batch in test_loader:
+        test_loss_sum = 0.0
+        test_samples = 0
 
-            pass
+        for batch in test_loader:
+            drone_images = batch["drone_tensor"]
+            tile_images = batch["tile_tensor"]
+            batch_size_actual = drone_images.shape[0]
+
+            targets = torch.arange(batch_size_actual)
+
+            similarity_logits = create_similarity_logits(drone_images,
+                                                         tile_images,
+                                                         dv_model,
+                                                         sv_model)
+
+            loss = loss_fn(similarity_logits, targets)
+            test_loss_sum += loss.item() * batch_size_actual
+            test_samples += batch_size_actual
+
+        metrics["test_loss"].append(test_loss_sum / test_samples)
+
+    logging.info("Training Procedure Completed:")
+    logging.info(f"Final Test Loss: {metrics["test_loss"][-1]}")
+
+    logging.info("Beggining Model export process")
 
     # Export model files for Satellite and Drone in seperate files
-    # Format will be <name>_s.tch and <name>_d.tch respectively
-    model_dest_path = str(Path(__file__).parent.parent / "models")
+    # Format will be <name>_s.pt and <name>_d.pt respectively
+    model_dest_path = Path(__file__).parent.parent / "models"
+    model_dest_path.mkdir(parents=True, exist_ok=True)
+
     s_path = model_dest_path / f"{model_name}_s.pt"
     d_path = model_dest_path / f"{model_name}_d.pt"
+    torch.save(sv_model.state_dict(), s_path)
+    torch.save(dv_model.state_dict(), d_path)
 
-    torch.save(sv_model, s_path)
-    torch.save(dv_model, d_path)
-    logging.info("Torch files successfully exported")
-
+    logging.info("Torch model state dictionaries exported")
     logging.info("Program terminated successfully")
