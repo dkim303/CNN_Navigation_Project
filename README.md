@@ -16,14 +16,17 @@ Description:
     In deployment, satellite tile embeddings are intended to be computed and stored in memroy in advance, 
     which allows the new drone image embeddings to be localized through nearest neighbor search.
     
+    Combined model contains seperate models for satellite and drone data. Given a trained model pair, 
+    it can ingest satellite data and estimate locations given new drone images.
+
     Planned project features include:
-        Geospatial satellite tiling and coordinate bound calculation
-        Drone-to-satellite tile label generation using GPS metadata
-        Separate PyTorch CNN encoders for drone and satellite imagery
-        Contrastive similarity training and top-k tile retrieval
-        Configurable model architecture, preprocessing, tiling, and training parameters
-        Training diagnostics, evaluation metrics, and model export
-        A planned C++ inference pipeline for deployment
+        1. Geospatial satellite tiling and coordinate bound calculation
+        2. Drone-to-satellite tile label generation using GPS metadata
+        3. Separate PyTorch CNN encoders for drone and satellite imagery
+        4. Contrastive similarity training and top-k tile retrieval
+        5. Configurable model architecture, preprocessing, tiling, and training parameters
+        6. Training diagnostics, evaluation metrics, and model export
+        7. A planned C++ inference pipeline for deployment
 
 Docker Setup:
 
@@ -39,7 +42,7 @@ Create and Activate Virtual Environment:
 
 Instructions:
 
-    Create and train new models, then export to C++:
+    Create and train new models and save as .pt files. Then export as C++ executables.
 
         1: python -m training_program.train\ --model-name <???> --config configs/<???.yaml>
         2: python -m training_program.evaluate\ --model-name<???>
