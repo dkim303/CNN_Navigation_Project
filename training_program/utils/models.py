@@ -146,11 +146,15 @@ class Geo_Locator:
 
     # Given an image, locate the satellite tile and estimate coordinates
     def locate(self, drone_image_path, top_k: int = 5):
+        if top_k < 1:
+            raise ValueError(f"Error: top_k is invalid {top_k}")
+
         pass
 
-    # Clear all memorized satellite data
+    # Clear all memorized satellite data, keeps column schema
     def clear(self):
-        pass
+        self.satellite_metadata = self.satellite_metadata[0:0]
+        self.satellite_embeddings = self.satellite_embeddings[0:0]
 
     # Return number of tracked satellite tiles
     def __len__(self):

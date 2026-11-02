@@ -26,7 +26,7 @@ Description:
         4. Contrastive similarity training and top-k tile retrieval
         5. Configurable model architecture, preprocessing, tiling, and training parameters
         6. Training diagnostics, evaluation metrics, and model export
-        7. A planned C++ inference pipeline for deployment
+        7. Model evaluation
 
 Docker Setup:
 
@@ -42,13 +42,10 @@ Create and Activate Virtual Environment:
 
 Instructions:
 
-    Create and train new models and save as .pt files. Then export as C++ executables.
+    Create and train new models and save as .pt files.
 
         1: python -m training_program.train\ --model-name <???> --config configs/<???.yaml>
         2: python -m training_program.evaluate\ --model-name<???>
-
-        3: make -C cpp_program
-        4: ./cpp_program/program models/<???>
 
     Compare different models:
         1: python -m training_program.compare\ --model-name-1 <???> --model-name-2 <???>
