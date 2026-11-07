@@ -45,7 +45,9 @@ Instructions:
     Create and train new models and save as .pt files.
 
         1: python -m training_program.train\ --model-name <???> --config configs/<???.yaml>
-        2: python -m training_program.evaluate\ --model-name<???>
+
+    Evaluate a model:
+        1: python -m training_program.evaluate\ --model-name<???>
 
     Compare different models:
         1: python -m training_program.compare\ --model-name-1 <???> --model-name-2 <???>
